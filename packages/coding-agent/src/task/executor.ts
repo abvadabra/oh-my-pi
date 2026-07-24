@@ -168,6 +168,8 @@ import {
 	cfgTaskMaxRecursionDepth,
 	cfgTaskAgentAdvisor,
 	cfgTaskAgentAccountPools,
+	cfgTaskAgentToolOverrides,
+	cfgTaskCustomSystemPrompt,
 	cfgTaskEnableLsp,
 } from "./settings";
 import {
@@ -4806,10 +4808,21 @@ async function runSubprocessOnThisThread(options: ExecutorOptions): Promise<Sing
 	const atMaxDepth = maxRecursionDepth >= 0 && childDepth >= maxRecursionDepth;
 
 	// Add tools if specified. Unstructured runs never get `yield`, even when
-	// the frontmatter lists it.
+	// the frontmatter lists it. `task.agentToolOverrides` replaces the agent's
+	// frontmatter roster (same comma-separated syntax); downstream massaging
+	// (spawn auto-include, depth trims, settings gates) applies to the
+	// override exactly as it would to the frontmatter list.
+	const agentToolsOverrideRaw = cfgTaskAgentToolOverrides.get(settings)[agent.name];
+	const agentTools =
+		typeof agentToolsOverrideRaw === "string" && agentToolsOverrideRaw.trim().length > 0
+			? agentToolsOverrideRaw
+					.split(",")
+					.map(name => name.trim())
+					.filter(Boolean)
+			: agent.tools;
 	let toolNames: string[] | undefined;
-	if (agent.tools) {
-		toolNames = structured ? agent.tools : agent.tools.filter(name => name !== "yield");
+	if (agentTools) {
+		toolNames = structured ? agentTools : agentTools.filter(name => name !== "yield");
 		// Auto-include task tool if spawns defined but task not in tools
 		if (agent.spawns !== undefined && !toolNames.includes("task") && !atMaxDepth) {
 			toolNames = [...toolNames, "task"];
@@ -5295,6 +5308,13 @@ async function runSubprocessOnThisThread(options: ExecutorOptions): Promise<Sing
 					preloadedExtensionPaths: restrictToolNames ? [] : options.preloadedExtensionPaths,
 					preloadedPreparedExtensions: options.preloadedPreparedExtensions,
 					preloadedCustomToolPaths: restrictToolNames ? [] : options.preloadedCustomToolPaths,
+					// `task.customSystemPrompt` swaps the harness portion of the child's
+					// default prompt (same semantics as the main session's
+					// `--system-prompt`); the COOP/yield splice is unaffected.
+					// Restricted (plan-mode) children keep their policy-locked prompt.
+					customSystemPrompt: restrictToolNames
+						? undefined
+						: cfgTaskCustomSystemPrompt.get(settings).trim() || undefined,
 					hasUI: false,
 					prewalk,
 					spawns: spawnsEnv,

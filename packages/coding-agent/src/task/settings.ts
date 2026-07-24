@@ -700,6 +700,26 @@ export const cfgTaskAgentAccountPools = register({
 	validate: validateAgentAccountPools,
 });
 
+export const cfgTaskAgentToolOverrides = register({
+	// Agent name → comma-separated tool list replacing the agent's
+	// frontmatter `tools:` roster (same syntax). Settings-level tool gates
+	// still apply on top; downstream roster massaging (spawn auto-include,
+	// hub, max-depth trims) is unchanged.
+	id: "task.agentToolOverrides",
+	type: "record",
+	default: {} as Record<string, string>,
+});
+
+export const cfgTaskCustomSystemPrompt = register({
+	// Inline replacement for the harness portion of every spawned
+	// subagent's system prompt (same semantics as the main session's
+	// `--system-prompt`: omp still wraps it with project context, skills,
+	// rules, and the subagent COOP/yield sections). Empty = stock prompt.
+	id: "task.customSystemPrompt",
+	type: "string",
+	default: "",
+});
+
 export const cfgTaskAgentPrewalk = register({
 	id: "task.agentPrewalk",
 	protocolDefault: ["rpc", "acp"],

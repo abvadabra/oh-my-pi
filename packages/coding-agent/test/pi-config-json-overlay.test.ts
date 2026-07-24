@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
+import { cfgTaskAgentToolOverrides, cfgTaskCustomSystemPrompt } from "@oh-my-pi/pi-coding-agent/task/settings";
+import { cfgToolsDescriptionOverrides, cfgToolsDescriptionPatches } from "@oh-my-pi/pi-coding-agent/tools/settings";
 import { getProjectAgentDir, TempDir } from "@oh-my-pi/pi-utils";
 import { beginSettingsTest, restoreSettingsTestState, type SettingsTestState } from "./helpers/settings-test-state";
 
@@ -47,19 +49,19 @@ describe("PI_CONFIG_JSON inline overlay", () => {
 			},
 		});
 		const settings = await load();
-		expect(settings.get("task.customSystemPrompt")).toBe("SHELL-CENTRIC SUBAGENT PROMPT");
-		expect(settings.get("task.agentToolOverrides")).toEqual({ scout: "bash, read, web_search" });
-		expect(settings.get("tools.descriptionOverrides")).toEqual({ bash: "bash override text" });
-		expect(settings.get("tools.descriptionPatches")).toEqual({ task: [{ find: "scout", replace: "sonic" }] });
+		expect(cfgTaskCustomSystemPrompt.get(settings)).toBe("SHELL-CENTRIC SUBAGENT PROMPT");
+		expect(cfgTaskAgentToolOverrides.get(settings)).toEqual({ scout: "bash, read, web_search" });
+		expect(cfgToolsDescriptionOverrides.get(settings)).toEqual({ bash: "bash override text" });
+		expect(cfgToolsDescriptionPatches.get(settings)).toEqual({ task: [{ find: "scout", replace: "sonic" }] });
 	});
 
 	it("is a no-op when unset or blank", async () => {
 		delete process.env.PI_CONFIG_JSON;
 		const settings = await load();
-		expect(settings.get("task.customSystemPrompt")).toBe("");
+		expect(cfgTaskCustomSystemPrompt.get(settings)).toBe("");
 		process.env.PI_CONFIG_JSON = "   ";
 		const settingsBlank = await load();
-		expect(settingsBlank.get("task.customSystemPrompt")).toBe("");
+		expect(cfgTaskCustomSystemPrompt.get(settingsBlank)).toBe("");
 	});
 
 	it("hard-errors on malformed JSON instead of silently using stock settings", async () => {
