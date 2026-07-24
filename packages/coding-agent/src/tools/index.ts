@@ -1,7 +1,7 @@
 import type { AgentOptions, AgentTelemetryConfig, AgentTool, AgentToolContext } from "@oh-my-pi/pi-agent-core";
 import type { ToolConversationState } from "./tool-state";
 import type { FetchImpl, ImageContent, Message, Model, ServiceTierByFamily, ToolChoice } from "@oh-my-pi/pi-ai";
-import { logger } from "@oh-my-pi/pi-utils";
+import { logger, prompt } from "@oh-my-pi/pi-utils";
 import type { AsyncJobManagerApi } from "../async/job-manager";
 import type { NotifyBatch } from "../async/notify";
 import type { Rule } from "../capability/rule";
@@ -96,6 +96,8 @@ import {
 	cfgSecurityEnabled,
 	cfgTodoEnabled,
 	cfgToolsCommands,
+	cfgToolsDescriptionOverrides,
+	cfgToolsDescriptionPatches,
 	cfgWebSearchEnabled,
 } from "./settings";
 import { cfgAutolearnEnabled } from "../autolearn/settings";
@@ -959,6 +961,7 @@ export async function createTools(session: ToolSession, toolNames?: string[]): P
 		else session.isToolActive = name => finalActiveNames.has(name);
 	}
 
+	applyDescriptionOverrides(session, tools);
 	return tools;
 }
 
@@ -1009,3 +1012,73 @@ export type {
 	GhRunWatchFailedLogDetails,
 	GhRunWatchViewDetails,
 } from "./details/github";
+
+/** Flags mirroring the conditionals built-in tool descriptions render with. */
+function descriptionOverrideContext(session: ToolSession): Record<string, unknown> {
+	const isActive = (name: string) => session.isToolActive?.(name) ?? false;
+	return {
+		asyncEnabled: cfgAsyncEnabled.get(session.settings),
+		hasGrep: isActive("grep"),
+		hasGlob: isActive("glob"),
+		hasRead: isActive("read"),
+		hasEval: isActive("eval"),
+		// As bash computes it for its own description: live `launch.enabled`
+		// while bash is an active tool.
+		hasLaunch: cfgLaunchEnabled.get(session.settings) === true && (session.isToolActive?.("bash") ?? true),
+	};
+}
+
+/**
+ * Apply `tools.descriptionOverrides` (wholesale, template-rendered) and
+ * `tools.descriptionPatches` (find/replace on the rendered text) from settings.
+ * Shadows `description` with an instance getter so dynamic descriptions (e.g.
+ * bash's flag-conditional getter, task's live agent roster) stay lazy underneath
+ * patches, and every consumer — wire schemas and inline inventories — sees the
+ * result.
+ */
+export function applyDescriptionOverrides(session: ToolSession, tools: Tool[]): void {
+	const overrides = cfgToolsDescriptionOverrides.get(session.settings);
+	const patches = cfgToolsDescriptionPatches.get(session.settings);
+	for (const tool of tools) {
+		const override = overrides[tool.name];
+		const toolPatches = patches[tool.name];
+		if (override === undefined && (!toolPatches || toolPatches.length === 0)) continue;
+
+		let readBase: () => string;
+		if (typeof override === "string") {
+			readBase = () => prompt.render(override, descriptionOverrideContext(session));
+		} else {
+			const descriptor = findPropertyDescriptor(tool, "description");
+			readBase = descriptor?.get
+				? () => String(descriptor.get!.call(tool) ?? "")
+				: () => String(descriptor?.value ?? "");
+		}
+
+		Object.defineProperty(tool, "description", {
+			configurable: true,
+			enumerable: true,
+			get: () => {
+				let text = readBase();
+				for (const patch of toolPatches ?? []) {
+					if (!patch || typeof patch.find !== "string" || typeof patch.replace !== "string") continue;
+					if (!text.includes(patch.find)) {
+						logger.warn("tools.descriptionPatches: pattern not found", { tool: tool.name, find: patch.find });
+						continue;
+					}
+					text = text.replaceAll(patch.find, patch.replace);
+				}
+				return text;
+			},
+		});
+	}
+}
+
+function findPropertyDescriptor(target: object, key: string): PropertyDescriptor | undefined {
+	let current: object | null = target;
+	while (current) {
+		const descriptor = Object.getOwnPropertyDescriptor(current, key);
+		if (descriptor) return descriptor;
+		current = Object.getPrototypeOf(current);
+	}
+	return undefined;
+}
