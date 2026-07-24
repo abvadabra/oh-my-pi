@@ -1855,6 +1855,11 @@ export class Settings {
 			settings = this.#deepMerge(settings, overlay);
 			if (Object.hasOwn(overlay, "shellPath")) shellPathSource = filePath;
 		}
+		const inlineOverlay = this.#loadInlineEnvOverlay();
+		if (inlineOverlay) {
+			settings = this.#deepMerge(settings, inlineOverlay);
+			if (Object.hasOwn(inlineOverlay, "shellPath")) shellPathSource = "PI_CONFIG_JSON";
+		}
 		return { settings, shellPathSource };
 	}
 
@@ -1862,6 +1867,28 @@ export class Settings {
 		const result = await this.#readConfigOverlays();
 		this.#overlayShellPathSource = result.shellPathSource;
 		return result.settings;
+	}
+
+	/**
+	 * `PI_CONFIG_JSON`: an inline JSON settings object merged after every
+	 * `--config`/`PI_CONFIG_FILES` overlay (it wins on conflicts). Lets a
+	 * supervising process pass per-process setting overrides without
+	 * materializing an overlay file. Strict like `#loadOverlayYaml`: malformed
+	 * content is a hard error, never a silent fallback to stock settings.
+	 */
+	#loadInlineEnvOverlay(): RawSettings | null {
+		const raw = process.env.PI_CONFIG_JSON?.trim();
+		if (!raw) return null;
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(raw);
+		} catch (error) {
+			throw new Error(`Failed to parse PI_CONFIG_JSON: ${String(error)}`);
+		}
+		if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+			throw new Error("PI_CONFIG_JSON must be a JSON object of settings");
+		}
+		return this.#migrateRawSettings(parsed as RawSettings);
 	}
 
 	/**
