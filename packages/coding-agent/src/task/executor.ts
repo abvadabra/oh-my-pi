@@ -3100,10 +3100,21 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 	const atMaxDepth = maxRecursionDepth >= 0 && childDepth >= maxRecursionDepth;
 	const ircEnabled = options.enableIrc !== false && isIrcEnabled(subagentSettings, childDepth);
 
-	// Add tools if specified
+	// Add tools if specified. `task.agentToolOverrides` replaces the agent's
+	// frontmatter roster (same comma-separated syntax); downstream massaging
+	// (spawn auto-include, hub widening, depth trims, settings gates) applies
+	// to the override exactly as it would to the frontmatter list.
+	const agentToolsOverrideRaw = (settings.get("task.agentToolOverrides") as Record<string, string>)[agent.name];
+	const agentTools =
+		typeof agentToolsOverrideRaw === "string" && agentToolsOverrideRaw.trim().length > 0
+			? agentToolsOverrideRaw
+					.split(",")
+					.map(name => name.trim())
+					.filter(Boolean)
+			: agent.tools;
 	let toolNames: string[] | undefined;
-	if (agent.tools) {
-		toolNames = agent.tools;
+	if (agentTools) {
+		toolNames = agentTools;
 		// Auto-include task tool if spawns defined but task not in tools
 		if (agent.spawns !== undefined && !toolNames.includes("task") && !atMaxDepth) {
 			toolNames = [...toolNames, "task"];
@@ -3463,6 +3474,13 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 				preloadedExtensionPaths: restrictToolNames ? [] : options.preloadedExtensionPaths,
 				preloadedPreparedExtensions: restrictToolNames ? [] : options.preloadedPreparedExtensions,
 				preloadedCustomToolPaths: restrictToolNames ? [] : options.preloadedCustomToolPaths,
+				// `task.customSystemPrompt` swaps the harness portion of the child's
+				// default prompt (same semantics as the main session's
+				// `--system-prompt`); the COOP/yield splice below is unaffected.
+				// Restricted (plan-mode) children keep their policy-locked prompt.
+				customSystemPrompt: restrictToolNames
+					? undefined
+					: (settings.get("task.customSystemPrompt") as string)?.trim() || undefined,
 				systemPrompt: defaultPrompt => {
 					const ircRoster = ircEnabled
 						? collectIrcPeerRoster(AgentRegistry.global(), id, ircRootSessionFile)

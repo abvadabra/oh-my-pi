@@ -5221,6 +5221,22 @@ export const SETTINGS_SCHEMA = {
 		type: "record",
 		default: DEFAULT_AGENT_MODEL_OVERRIDES,
 	},
+	"task.agentToolOverrides": {
+		// Agent name → comma-separated tool list replacing the agent's
+		// frontmatter `tools:` roster (same syntax). Settings-level tool gates
+		// still apply on top; downstream roster massaging (spawn auto-include,
+		// hub, max-depth trims) is unchanged.
+		type: "record",
+		default: {} as Record<string, string>,
+	},
+	"task.customSystemPrompt": {
+		// Inline replacement for the harness portion of every spawned
+		// subagent's system prompt (same semantics as the main session's
+		// `--system-prompt`: omp still wraps it with project context, skills,
+		// rules, and the subagent COOP/yield sections). Empty = stock prompt.
+		type: "string",
+		default: "",
+	},
 	"task.agentPrewalk": {
 		type: "record",
 		default: {} as Record<string, string>,
