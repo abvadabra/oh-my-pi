@@ -4629,6 +4629,24 @@ export const SETTINGS_SCHEMA = {
 	},
 
 	// Tool execution
+	"tools.descriptionOverrides": {
+		// Tool name → replacement description text. Rendered through the prompt
+		// template engine with the same conditional flags built-in descriptions
+		// use (hasGrep/hasGlob/hasRead/hasLaunch/hasEval/asyncEnabled), so one
+		// override can serve sessions with differing rosters. Applies to every
+		// session in the process, subagents included.
+		type: "record",
+		default: {} as Record<string, string>,
+	},
+	"tools.descriptionPatches": {
+		// Tool name → ordered find/replace pairs applied to the tool's rendered
+		// description. For surgical edits to descriptions with dynamic content
+		// (e.g. `task`'s agent roster) where a wholesale override would freeze
+		// live sections. A `find` that no longer matches is skipped and logged —
+		// never a hard error.
+		type: "record",
+		default: {} as Record<string, Array<{ find: string; replace: string }>>,
+	},
 	"tools.intentTracing": {
 		type: "boolean",
 		default: true,

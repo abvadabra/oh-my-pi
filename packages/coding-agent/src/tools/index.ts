@@ -1,7 +1,7 @@
 import type { AgentOptions, AgentTelemetryConfig, AgentTool, AgentToolContext } from "@oh-my-pi/pi-agent-core";
 import type { EditStore } from "@oh-my-pi/pi-natives";
 import type { FetchImpl, ImageContent, Model, ServiceTierByFamily, ToolChoice } from "@oh-my-pi/pi-ai";
-import { logger } from "@oh-my-pi/pi-utils";
+import { logger, prompt } from "@oh-my-pi/pi-utils";
 import type { AsyncJobManager } from "../async/job-manager";
 import type { Rule } from "../capability/rule";
 import type { EffectiveExtensionRoots } from "../capability/types";
@@ -783,5 +783,74 @@ export async function createTools(session: ToolSession, toolNames?: string[]): P
 		else session.isToolActive = name => finalActiveNames.has(name);
 	}
 
+	applyDescriptionOverrides(session, tools);
 	return tools;
+}
+
+/** Flags mirroring the conditionals built-in tool descriptions render with. */
+function descriptionOverrideContext(session: ToolSession): Record<string, unknown> {
+	const isActive = (name: string) => session.isToolActive?.(name) ?? false;
+	return {
+		asyncEnabled: session.settings.get("async.enabled"),
+		hasGrep: isActive("grep"),
+		hasGlob: isActive("glob"),
+		hasRead: isActive("read"),
+		hasEval: isActive("eval"),
+		hasLaunch: isActive("hub") && session.settings.get("launch.enabled"),
+	};
+}
+
+/**
+ * Apply `tools.descriptionOverrides` (wholesale, template-rendered) and
+ * `tools.descriptionPatches` (find/replace on the rendered text) from settings.
+ * Shadows `description` with an instance getter so dynamic descriptions (e.g.
+ * bash's flag-conditional getter, task's live agent roster) stay lazy underneath
+ * patches, and every consumer — wire schemas and inline inventories — sees the
+ * result.
+ */
+export function applyDescriptionOverrides(session: ToolSession, tools: Tool[]): void {
+	const overrides = session.settings.get("tools.descriptionOverrides");
+	const patches = session.settings.get("tools.descriptionPatches");
+	for (const tool of tools) {
+		const override = overrides[tool.name];
+		const toolPatches = patches[tool.name];
+		if (override === undefined && (!toolPatches || toolPatches.length === 0)) continue;
+
+		let readBase: () => string;
+		if (typeof override === "string") {
+			readBase = () => prompt.render(override, descriptionOverrideContext(session));
+		} else {
+			const descriptor = findPropertyDescriptor(tool, "description");
+			readBase = descriptor?.get
+				? () => String(descriptor.get!.call(tool) ?? "")
+				: () => String(descriptor?.value ?? "");
+		}
+
+		Object.defineProperty(tool, "description", {
+			configurable: true,
+			enumerable: true,
+			get: () => {
+				let text = readBase();
+				for (const patch of toolPatches ?? []) {
+					if (!patch || typeof patch.find !== "string" || typeof patch.replace !== "string") continue;
+					if (!text.includes(patch.find)) {
+						logger.warn("tools.descriptionPatches: pattern not found", { tool: tool.name, find: patch.find });
+						continue;
+					}
+					text = text.replaceAll(patch.find, patch.replace);
+				}
+				return text;
+			},
+		});
+	}
+}
+
+function findPropertyDescriptor(target: object, key: string): PropertyDescriptor | undefined {
+	let current: object | null = target;
+	while (current) {
+		const descriptor = Object.getOwnPropertyDescriptor(current, key);
+		if (descriptor) return descriptor;
+		current = Object.getPrototypeOf(current);
+	}
+	return undefined;
 }
