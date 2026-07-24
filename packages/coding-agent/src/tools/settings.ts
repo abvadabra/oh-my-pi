@@ -764,6 +764,28 @@ export const cfgAskEnabled = register({
 });
 
 // Tool execution
+export const cfgToolsDescriptionOverrides = register({
+	// Tool name → replacement description text. Rendered through the prompt
+	// template engine with the same conditional flags built-in descriptions
+	// use (hasGrep/hasGlob/hasRead/hasLaunch/hasEval/asyncEnabled), so one
+	// override can serve sessions with differing rosters. Applies to every
+	// session in the process, subagents included.
+	id: "tools.descriptionOverrides",
+	type: "record",
+	default: {} as Record<string, string>,
+});
+
+export const cfgToolsDescriptionPatches = register({
+	// Tool name → ordered find/replace pairs applied to the tool's rendered
+	// description. For surgical edits to descriptions with dynamic content
+	// (e.g. `task`'s agent roster) where a wholesale override would freeze
+	// live sections. A `find` that no longer matches is skipped and logged —
+	// never a hard error.
+	id: "tools.descriptionPatches",
+	type: "record",
+	default: {} as Record<string, Array<{ find: string; replace: string }>>,
+});
+
 export const cfgToolsIntentTracing = register({
 	id: "tools.intentTracing",
 	type: "boolean",
