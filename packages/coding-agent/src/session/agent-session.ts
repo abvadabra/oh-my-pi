@@ -6985,7 +6985,9 @@ export class AgentSession implements SettingsScope, AgentViewSession {
 		const sid = this.#activeProviderSessionId(sessionId);
 		this.agent.sessionId = sid;
 		this.agent.setMetadataResolver((provider: string) =>
-			buildSessionMetadata(sid, provider, this.#modelRegistry.authStorage),
+			buildSessionMetadata(sid, provider, this.#modelRegistry.authStorage, providerName =>
+				this.#modelRegistry.getAvailable().find(model => model.provider === providerName),
+			),
 		);
 		// A fresh or reset id becomes the pool scope's primary id, restricted
 		// before restored pins are seeded so they cannot leave the pool.
