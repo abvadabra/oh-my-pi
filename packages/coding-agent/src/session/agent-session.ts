@@ -4372,7 +4372,9 @@ export class AgentSession {
 		const sid = this.#activeProviderSessionId(sessionId);
 		this.agent.sessionId = sid;
 		this.agent.setMetadataResolver((provider: string) =>
-			buildSessionMetadata(sid, provider, this.#modelRegistry.authStorage),
+			buildSessionMetadata(sid, provider, this.#modelRegistry.authStorage, providerName =>
+				this.#modelRegistry.getAvailable().find(model => model.provider === providerName),
+			),
 		);
 		// Restore the session's recorded provider accounts before the first
 		// request routes: sticky rows are process-local under a remote auth

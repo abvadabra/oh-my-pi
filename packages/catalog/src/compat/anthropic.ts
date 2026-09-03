@@ -5,6 +5,7 @@
  * pi-ai both consume these; URL matching is the one detection surface that
  * stays in code.
  */
+import { $env } from "@oh-my-pi/pi-utils";
 import { hostMatchesUrl } from "../hosts";
 
 const OFFICIAL_ANTHROPIC_URL = "https://api.anthropic.com";
@@ -19,7 +20,28 @@ const OFFICIAL_ANTHROPIC_URL = "https://api.anthropic.com";
 export function isOfficialAnthropicApiUrl(baseUrl?: string): boolean {
 	if (!baseUrl) return true;
 	const lower = baseUrl.toLowerCase();
-	return lower === OFFICIAL_ANTHROPIC_URL || lower.startsWith(`${OFFICIAL_ANTHROPIC_URL}/`);
+	if (lower === OFFICIAL_ANTHROPIC_URL || lower.startsWith(`${OFFICIAL_ANTHROPIC_URL}/`)) return true;
+	return officialEquivalentBaseUrls().some(prefix => lower === prefix || lower.startsWith(`${prefix}/`));
+}
+
+/**
+ * Base URLs the host declares as standing in for the official API:
+ * `PI_ANTHROPIC_OFFICIAL_BASE_URLS`, comma-separated origins or prefixes
+ * (trailing slashes and `/v1` ignored). Meant for a trusted local proxy that
+ * forwards to `api.anthropic.com` after swapping in the real credential — the
+ * request must then be shaped exactly as for the first-party host
+ * (Claude-Code attribution metadata, eager tool-input streaming, long cache
+ * retention, mid-conversation system messages, signed-thinking replay), and
+ * only this check decides that. Same boundary rule as the canonical host:
+ * exact origin or a `/` after the prefix, never a bare string prefix.
+ */
+function officialEquivalentBaseUrls(): string[] {
+	const raw = $env.PI_ANTHROPIC_OFFICIAL_BASE_URLS?.trim();
+	if (!raw) return [];
+	return raw
+		.split(",")
+		.map(entry => entry.trim().toLowerCase().replace(/\/+$/, "").replace(/\/v1$/, ""))
+		.filter(entry => entry.length > 0);
 }
 
 const CLOUDFLARE_ANTHROPIC_GATEWAY_URL_MARKER = /gateway\.ai\.cloudflare\.com\/.+\/anthropic(?:\/|$)/i;

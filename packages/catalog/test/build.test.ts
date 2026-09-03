@@ -1442,4 +1442,34 @@ describe("isOfficialAnthropicApiUrl", () => {
 	it("rejects lookalike hostnames", () => {
 		expect(isOfficialAnthropicApiUrl("https://api.anthropic.com.evil.com")).toBe(false);
 	});
+
+	it("honours host-declared official-equivalent base URLs, with the same boundary rule", () => {
+		const previous = process.env.PI_ANTHROPIC_OFFICIAL_BASE_URLS;
+		process.env.PI_ANTHROPIC_OFFICIAL_BASE_URLS =
+			" http://127.0.0.1:8735/agent-gw/sub/v1, https://relay.example/anthropic/ ";
+		try {
+			expect(isOfficialAnthropicApiUrl("http://127.0.0.1:8735/agent-gw/sub")).toBe(true);
+			expect(isOfficialAnthropicApiUrl("http://127.0.0.1:8735/agent-gw/sub/v1")).toBe(true);
+			expect(isOfficialAnthropicApiUrl("HTTP://127.0.0.1:8735/agent-gw/SUB/")).toBe(true);
+			expect(isOfficialAnthropicApiUrl("https://relay.example/anthropic")).toBe(true);
+			// A sibling route on the same proxy is NOT the subscription route.
+			expect(isOfficialAnthropicApiUrl("http://127.0.0.1:8735/agent-gw/v1")).toBe(false);
+			expect(isOfficialAnthropicApiUrl("http://127.0.0.1:8735/agent-gw/subscriptions")).toBe(false);
+			expect(isOfficialAnthropicApiUrl("https://relay.example/anthropic.evil")).toBe(false);
+		} finally {
+			if (previous === undefined) delete process.env.PI_ANTHROPIC_OFFICIAL_BASE_URLS;
+			else process.env.PI_ANTHROPIC_OFFICIAL_BASE_URLS = previous;
+		}
+	});
+
+	it("ignores an unset or empty declaration", () => {
+		const previous = process.env.PI_ANTHROPIC_OFFICIAL_BASE_URLS;
+		process.env.PI_ANTHROPIC_OFFICIAL_BASE_URLS = " , ";
+		try {
+			expect(isOfficialAnthropicApiUrl("http://127.0.0.1:8735/agent-gw/sub")).toBe(false);
+		} finally {
+			if (previous === undefined) delete process.env.PI_ANTHROPIC_OFFICIAL_BASE_URLS;
+			else process.env.PI_ANTHROPIC_OFFICIAL_BASE_URLS = previous;
+		}
+	});
 });

@@ -1,5 +1,6 @@
-import { deriveClaudeDeviceId } from "@oh-my-pi/pi-ai";
-import { getInstallId } from "@oh-my-pi/pi-utils";
+import { type Api, deriveClaudeDeviceId, type Model } from "@oh-my-pi/pi-ai";
+import { isOfficialAnthropicApiUrl } from "@oh-my-pi/pi-catalog/compat/anthropic";
+import { $env, getInstallId } from "@oh-my-pi/pi-utils";
 import type { AuthStorage } from "./auth-storage";
 
 /**
@@ -28,19 +29,35 @@ import type { AuthStorage } from "./auth-storage";
  * `authStorage` is treated as optional so test fixtures that stub `modelRegistry`
  * without a real storage layer still work; the resolver simply skips the lookup
  * and emits `{ session_id }` alone, matching the no-OAuth-credential path.
+ *
+ * `resolveProviderModel` looks up a registered provider's model so a
+ * host-declared official-equivalent proxy (see below) can be recognised.
  */
 export function buildSessionMetadata(
 	sessionId: string,
 	provider: string,
 	authStorage: AuthStorage | undefined,
+	resolveProviderModel?: (provider: string) => Model<Api> | undefined,
 ): Record<string, unknown> {
 	const userId: Record<string, string> = { session_id: sessionId };
 	// Only look up account_uuid when the request is going to Anthropic. Injecting
 	// a Claude OAuth account_uuid into requests bound for other providers (including
 	// Anthropic-format-compatible proxies like cloudflare-ai-gateway or gitlab-duo)
 	// would leak the user's Anthropic identity to unrelated third-party APIs.
-	if (provider === "anthropic") {
-		const accountUuid = authStorage?.getOAuthAccountId("anthropic", sessionId);
+	//
+	// "Going to Anthropic" is the built-in provider, or a registered
+	// `anthropic-messages` provider whose base URL the host declared
+	// official-equivalent (a trusted local proxy forwarding to api.anthropic.com
+	// — see `isOfficialAnthropicApiUrl`). Such a host holds the credential
+	// itself, so the account UUID arrives as `PI_ANTHROPIC_ACCOUNT_UUID` rather
+	// than from auth storage; for the built-in provider auth storage stays the
+	// authority and the env is only a fallback.
+	const builtIn = provider === "anthropic";
+	const viaOfficialProxy = !builtIn && isOfficialAnthropicProxyModel(resolveProviderModel?.(provider));
+	if (builtIn || viaOfficialProxy) {
+		const stored = authStorage?.getOAuthAccountId("anthropic", sessionId);
+		const declared = $env.PI_ANTHROPIC_ACCOUNT_UUID?.trim();
+		const accountUuid = builtIn ? (stored ?? declared) : (declared ?? stored);
 		if (typeof accountUuid === "string" && accountUuid.length > 0) {
 			userId.account_uuid = accountUuid;
 			// Claude Code's `device_id` is a stable 64-hex account-scoped install
@@ -50,4 +67,10 @@ export function buildSessionMetadata(
 		}
 	}
 	return { user_id: JSON.stringify(userId) };
+}
+
+/** A registered `anthropic-messages` OAuth provider on a host-declared official-equivalent base. */
+function isOfficialAnthropicProxyModel(model: Model<Api> | undefined): boolean {
+	if (model?.api !== "anthropic-messages" || model.isOAuth !== true) return false;
+	return Boolean(model.baseUrl) && isOfficialAnthropicApiUrl(model.baseUrl);
 }
