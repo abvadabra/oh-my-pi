@@ -446,6 +446,7 @@ import {
 	cfgDisabledExtensions,
 	cfgExtensions,
 	cfgSkills,
+	cfgSkillsCompressDescriptions,
 	type SkillsSettings,
 } from "./extensibility/settings";
 import { cfgTtsr } from "./export/ttsr-settings";
@@ -4406,6 +4407,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			// Held until AgentSession exists: before then the root cost gate does not, so a request
 			// sent from the startup prompt render could go out ungated (see `startCompression` below).
 			deferCompression: true,
+			enabled: cfgSkillsCompressDescriptions.get(settings),
 			compress: createSkillDescriptionCompressor(modelRegistry, settings, hintCompressorOptions),
 			lock: hintLock,
 		});

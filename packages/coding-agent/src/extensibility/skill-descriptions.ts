@@ -538,24 +538,31 @@ export class RoutingHintCatalog {
 	}
 }
 
-/** Skill routing hints: one prompt/session snapshot over a {@link RoutingHintCatalog}. */
+/**
+ * Skill routing hints: one prompt/session snapshot over a {@link RoutingHintCatalog}.
+ * `enabled: false` (`skills.compressDescriptions` off) passes every description through verbatim:
+ * no preview cut, no store, no model call.
+ */
 export class SkillDescriptionCatalog {
-	readonly #hints: RoutingHintCatalog;
+	readonly #hints: RoutingHintCatalog | undefined;
 
-	constructor(options: RoutingHintCatalogOptions = {}) {
-		this.#hints = new RoutingHintCatalog(options);
+	constructor(options: RoutingHintCatalogOptions & { enabled?: boolean } = {}) {
+		this.#hints = (options.enabled ?? true) ? new RoutingHintCatalog(options) : undefined;
 	}
 
 	/** Read the session's frozen prompt hints without starting new model work. */
 	snapshot(skills: readonly Skill[]): Array<Skill & { description: string }> {
+		if (!this.#hints) return skills.map(skill => ({ ...skill }));
+		const hints = this.#hints;
 		return skills.map(skill => ({
 			...skill,
-			description: this.#hints.peek(keyFor(skill), previewSkillDescription(skill.description)),
+			description: hints.peek(keyFor(skill), previewSkillDescription(skill.description)),
 		}));
 	}
 
 	render(skills: readonly Skill[]): Array<Skill & { description: string }> {
 		if (skills.length === 0) return [];
+		if (!this.#hints) return skills.map(skill => ({ ...skill }));
 		// Authored descriptions already within the preview budget need no model
 		// compression: use them verbatim so exclusions survive. Only truly
 		// short input qualifies — `previewSkillDescription` truncates longer
@@ -584,12 +591,12 @@ export class SkillDescriptionCatalog {
 
 	/** Start compression held by `deferCompression`; later renders schedule theirs immediately. */
 	startCompression(): void {
-		this.#hints.startCompression();
+		this.#hints?.startCompression();
 	}
 
 	/** Await background writes already scheduled by this catalog (for shutdown or tests). */
 	waitForPending(): Promise<void> {
-		return this.#hints.waitForPending();
+		return this.#hints ? this.#hints.waitForPending() : Promise.resolve();
 	}
 }
 

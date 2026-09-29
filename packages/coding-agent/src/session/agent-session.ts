@@ -601,7 +601,7 @@ import { cfgFollowUpMode } from "../modes/settings";
 import { cfgSteeringMode } from "../modes/settings";
 import { cfgDisabledProviders, cfgModelRoles } from "../config/model-settings";
 import { cfgEvalJs, cfgEvalPy, cfgEvalToolsEnabled, cfgEvalWorkpoolFreshAgents } from "../eval/settings";
-import { cfgExtensions, type SkillsSettings } from "../extensibility/settings";
+import { cfgExtensions, cfgSkillsCompressDescriptions, type SkillsSettings } from "../extensibility/settings";
 import {
 	cfgImagesAutoResize,
 	cfgMagicKeyword,
@@ -2262,7 +2262,9 @@ export class AgentSession implements SettingsScope, AgentViewSession {
 		this.settings = config.settings;
 		this.#ownsCostGate = config.costGate === undefined;
 		this.#costGate = config.costGate ?? this.#createCostGate();
-		this.#skillDescriptions = config.skillDescriptions ?? new SkillDescriptionCatalog();
+		this.#skillDescriptions =
+			config.skillDescriptions ??
+			new SkillDescriptionCatalog({ enabled: cfgSkillsCompressDescriptions.get(config.settings) });
 		this.#mcpNamespaces = config.mcpNamespaces;
 		this.restrictToolNames = config.restrictToolNames === true;
 		this.memoryEnabled = config.memoryEnabled ?? true;
