@@ -458,7 +458,7 @@ import { cfgFollowUpMode } from "../modes/settings";
 import { cfgSteeringMode } from "../modes/settings";
 import { cfgDisabledProviders, cfgModelRoles } from "../config/model-settings";
 import { cfgEvalToolsEnabled } from "../eval/settings";
-import { cfgExtensions, type SkillsSettings } from "../extensibility/settings";
+import { cfgExtensions, cfgSkillsCompressDescriptions, type SkillsSettings } from "../extensibility/settings";
 import {
 	cfgImagesAutoResize,
 	cfgMagicKeyword,
@@ -1444,7 +1444,9 @@ export class AgentSession implements SettingsScope {
 		this.#codeModeState = config.codeModeState ?? {};
 		this.sessionManager = config.sessionManager;
 		this.settings = config.settings;
-		this.#skillDescriptions = config.skillDescriptions ?? new SkillDescriptionCatalog();
+		this.#skillDescriptions =
+			config.skillDescriptions ??
+			new SkillDescriptionCatalog({ enabled: cfgSkillsCompressDescriptions.get(config.settings) });
 		this.memoryEnabled = config.memoryEnabled ?? true;
 		this.#modelRegistry = config.modelRegistry;
 		this.#extensionRoots =

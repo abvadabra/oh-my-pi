@@ -336,6 +336,7 @@ import {
 	cfgDisabledExtensions,
 	cfgExtensions,
 	cfgSkills,
+	cfgSkillsCompressDescriptions,
 	type SkillsSettings,
 } from "./extensibility/settings";
 import { cfgTtsr } from "./export/ttsr-settings";
@@ -3652,6 +3653,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		const skillDescriptions = new SkillDescriptionCatalog({
 			dbPath: path.join(agentDir, "skill-descriptions.db"),
 			compress: createSkillDescriptionCompressor(modelRegistry, settings),
+			enabled: cfgSkillsCompressDescriptions.get(settings),
 		});
 		const rebuildSystemPrompt = async (
 			toolNames: string[],

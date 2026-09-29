@@ -28,6 +28,16 @@ export const cfgSkillsRegistryUrl = register({
 // Skills
 export const cfgSkillsEnabled = register({ id: "skills.enabled", type: "boolean", default: true });
 
+// Off by default: the system prompt lists each skill's description verbatim.
+// On, descriptions over 100 chars are cut to a preview and then replaced by a
+// ≤12-word routing hint written by a background model call (cached per agent
+// dir) — hosts whose descriptions are hand-written routing text keep them whole.
+export const cfgSkillsCompressDescriptions = register({
+	id: "skills.compressDescriptions",
+	type: "boolean",
+	default: false,
+});
+
 export const cfgSkillsEnableSkillCommands = register({
 	id: "skills.enableSkillCommands",
 	type: "boolean",
