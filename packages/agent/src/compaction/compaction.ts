@@ -196,6 +196,19 @@ export interface CompactionSettings {
 	remoteEndpoint?: string;
 	remoteStreamingV2Enabled?: boolean;
 	v2RetainedMessageBudget?: number;
+	/**
+	 * Per-attempt cap, in seconds, on a provider-native remote compaction
+	 * request (V2 streaming and V1 `/responses/compact`). The provider sends
+	 * nothing useful until the whole summary is written, so the time grows
+	 * with the summary's length. Unset or `<= 0` keeps the built-in 300 s.
+	 */
+	remoteTimeoutSeconds?: number;
+}
+
+/** {@link CompactionSettings.remoteTimeoutSeconds} as a request timeout; `undefined` keeps the default. */
+function remoteCompactionTimeoutMs(settings: Pick<CompactionSettings, "remoteTimeoutSeconds">): number | undefined {
+	const seconds = settings.remoteTimeoutSeconds;
+	return typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : undefined;
 }
 
 /** Reserve applied when {@link CompactionSettings.reserveTokens} is unset. */
@@ -2123,6 +2136,7 @@ export async function compact(
 				key =>
 					requestCompactionV2Streaming(model, key, request, signal, {
 						fetch: summaryOptions.fetch,
+						timeoutMs: remoteCompactionTimeoutMs(settings),
 						providerSessionState: summaryOptions.providerSessionState,
 						preferWebsockets: summaryOptions.preferWebsockets,
 						codexAccessPrograms: summaryOptions.codexAccessPrograms,
@@ -2191,6 +2205,7 @@ export async function compact(
 						signal,
 						{
 							fetch: summaryOptions.fetch,
+							timeoutMs: remoteCompactionTimeoutMs(settings),
 							sessionId: summaryOptions.sessionId,
 							promptCacheKey: summaryOptions.remotePromptCacheKey,
 							providerSessionState: summaryOptions.providerSessionState,

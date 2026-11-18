@@ -299,6 +299,16 @@ export const cfgCompactionV2RetainedMessageBudget = register({
 	default: 64000,
 });
 
+// Per-attempt cap on a provider-native remote compaction (V2 streaming and
+// V1 `/responses/compact`). The request is output-bound: nothing arrives
+// until the whole summary is written, so a long summary needs longer than
+// the stock 300 s. Hosts raise it; the default keeps upstream's behaviour.
+export const cfgCompactionRemoteTimeoutSeconds = register({
+	id: "compaction.remoteTimeoutSeconds",
+	type: "number",
+	default: 300,
+});
+
 // Idle compaction
 export const cfgCompactionIdleEnabled = register({
 	id: "compaction.idleEnabled",
@@ -397,6 +407,7 @@ export const cfgCompaction = combine({
 	remoteEndpoint: cfgCompactionRemoteEndpoint,
 	remoteStreamingV2Enabled: cfgCompactionRemoteStreamingV2Enabled,
 	v2RetainedMessageBudget: cfgCompactionV2RetainedMessageBudget,
+	remoteTimeoutSeconds: cfgCompactionRemoteTimeoutSeconds,
 	idleEnabled: cfgCompactionIdleEnabled,
 	idleThresholdTokens: cfgCompactionIdleThresholdTokens,
 	idleTimeoutSeconds: cfgCompactionIdleTimeoutSeconds,
