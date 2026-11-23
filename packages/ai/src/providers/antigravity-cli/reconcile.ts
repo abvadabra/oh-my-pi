@@ -140,13 +140,13 @@ export function replayPrompt(
 	for (let index = replay.length - 1; index >= 0; index--) {
 		const message = replay[index]!;
 		const wrapped = index < split;
-		const tag = message.role === "toolResult" ? "tool_result" : message.role;
-		const attrs =
-			wrapped && message.role === "toolResult"
-				? ` id=${JSON.stringify(message.toolCallId)} name=${JSON.stringify(message.toolName)} error=${message.isError}`
-				: "";
-		const start = wrapped ? `<${tag}${attrs}>` : "";
-		const end = wrapped ? `</${tag}>` : "";
+		const isToolResult = message.role === "toolResult";
+		const start = !wrapped
+			? ""
+			: isToolResult
+				? `[Tool output for ${message.toolName} (call ${message.toolCallId})${message.isError ? " (error)" : ""}]`
+				: `<${message.role}>`;
+		const end = !wrapped ? "" : isToolResult ? "[End tool output]" : `</${message.role}>`;
 		const wrapperBytes = wrapped ? textBytes(start) + textBytes(end) + (hasCheckpoint ? 0 : checkpointBytes) : 0;
 		if (wrapperBytes > remaining) {
 			omittedHistory = true;
@@ -190,7 +190,10 @@ export function replayPrompt(
 						text = `<thinking>${part.thinking}</thinking>`;
 						break;
 					case "toolCall":
-						text = `<tool_call id=${JSON.stringify(part.id)} name=${JSON.stringify(part.name)}>${stableStringifyJson(part.arguments)}</tool_call>`;
+						// Never emit `<tool_call ...>` XML tags in replayed history: hundreds of
+						// them in context poison Gemini into writing literal `<tool_call id=...>`
+						// text instead of invoking tools via its native function-calling interface.
+						text = `[Executed tool ${part.name} (call ${part.id}) with arguments: ${stableStringifyJson(part.arguments)}]`;
 						break;
 					default:
 						continue;

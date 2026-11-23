@@ -333,6 +333,120 @@ describe("AgyHost stateful steps", () => {
 			`model:${model.id}-medium`,
 		]);
 	});
+	it("does not leak thought_level onto models whose configOptions omit or restrict it", async () => {
+		const fixedModel = buildModel({
+			api: "antigravity-acp",
+			provider: "antigravity-cli",
+			id: "gpt-oss-120b-medium",
+			name: "GPT-OSS 120B (Medium)",
+			baseUrl: "",
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			maxTokens: 32_768,
+			contextWindow: 131_072,
+			reasoning: false,
+		});
+		const restrictedModel = buildModel({
+			api: "antigravity-acp",
+			provider: "antigravity-cli",
+			id: "claude-opus-4-6-thinking",
+			name: "Claude Opus 4.6 (Thinking)",
+			baseUrl: "",
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			maxTokens: 65_536,
+			contextWindow: 200_000,
+			reasoning: true,
+		});
+		const roster = [model.id, fixedModel.id, restrictedModel.id];
+		const state = await fixture({
+			startTransport: async input => {
+				const fake = new FakeAgy(input, roster);
+				let activeModel = model.id;
+				const optionsFor = (id: string): SessionConfigOption[] => {
+					const opts: SessionConfigOption[] = [
+						{
+							id: "model",
+							name: "Model",
+							type: "select",
+							currentValue: id,
+							options: roster.map(value => ({ value, name: value })),
+						},
+					];
+					if (id === model.id) {
+						opts.push({
+							id: "thought_level",
+							name: "Reasoning",
+							type: "select",
+							currentValue: "high",
+							options: [
+								{ value: "low", name: "Low" },
+								{ value: "medium", name: "Medium" },
+								{ value: "high", name: "High" },
+							],
+						});
+					} else if (id === restrictedModel.id) {
+						opts.push({
+							id: "thought_level",
+							name: "Reasoning",
+							type: "select",
+							currentValue: "high",
+							options: [{ value: "high", name: "High" }],
+						});
+					}
+					return opts;
+				};
+				fake.connection.newSession = async () => {
+					fake.currentId = crypto.randomUUID();
+					fake.created.push(fake.currentId);
+					activeModel = model.id;
+					return { sessionId: fake.currentId, configOptions: optionsFor(activeModel) };
+				};
+				fake.connection.setSessionConfigOption = async params => {
+					if (params.configId === "model") {
+						activeModel = String(params.value);
+						fake.configurations.push(`model:${activeModel}`);
+						return { configOptions: optionsFor(activeModel) };
+					}
+					if (params.configId === "thought_level") {
+						const allowed = optionsFor(activeModel).find(o => o.id === "thought_level");
+						const values = allowed?.type === "select" ? allowed.options.map(o => o.value) : [];
+						if (!values.includes(String(params.value))) {
+							throw new Error(`Thinking level "${params.value}" is not offered for model "${activeModel}"`);
+						}
+						fake.configurations.push(`thought_level:${params.value}`);
+						return { configOptions: optionsFor(activeModel) };
+					}
+					return { configOptions: optionsFor(activeModel) };
+				};
+				state.instances.push(fake);
+				state.started.push(fake);
+				return fake;
+			},
+		});
+
+		const runModel = async (target: typeof model, messages: Message[], reasoning?: string) => {
+			const stream = new AssistantMessageEventStream();
+			const writer = new StepWriter(target, stream);
+			const done = state.host.step(target, { messages, tools }, { reasoning }, writer);
+			done.catch(() => undefined);
+			const fake = state.instances[0] ?? (await state.started.next());
+			const ended = done.then(() => Promise.reject(new Error("step ended without prompting")));
+			const prompt = await Promise.race([fake.prompts.next(), ended]);
+			fake.text("ok");
+			prompt.response.resolve({ stopReason: "end_turn" });
+			await done;
+			return [...messages, writer.output];
+		};
+
+		// Switching from default (thought_level: "high") to fixedModel (no thought_level)
+		// must not send thought_level even when effort is undefined or stale ("high").
+		let msgs = await runModel(fixedModel, [user("one")], undefined);
+		msgs = await runModel(fixedModel, [...msgs, user("two")], "high");
+		// Switching to restrictedModel (only offers "high") with unsupported "low" must not send "low".
+		msgs = await runModel(restrictedModel, [...msgs, user("three")], "low");
+		expect(state.instances[0]!.configurations).toEqual([`model:${fixedModel.id}`, `model:${restrictedModel.id}`]);
+	});
 	it("publishes host tools with mixed-type unions without collapsing their properties", async () => {
 		// Shape of a typed `yield`: section variants make `data` an object|string union,
 		// which the CCA pipeline could only replace with an empty-object fallback (#19502).
@@ -723,7 +837,8 @@ describe("AgyHost stateful steps", () => {
 		expect(text).not.toContain("EARLIEST-HISTORY-HEAD");
 		expect(text).toContain("Older conversation history omitted");
 		expect(text).toContain("SURVIVING-HISTORY-TAIL");
-		expect(text).toContain("<tool_call");
+		expect(text).toContain("[Executed tool ");
+		expect(text).not.toContain("<tool_call");
 		expect(text).toContain(latest);
 		expect(text).toContain("</conversation-checkpoint>");
 		expect(request.prompt.at(-1)).toEqual({ type: "text", text: "LATEST-USER-INSTRUCTION" });

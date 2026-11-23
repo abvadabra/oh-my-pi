@@ -233,7 +233,7 @@ describe("replayPrompt", () => {
 			text: `<tool_result id=${JSON.stringify(quoted.toolCallId)} name=${JSON.stringify(quoted.toolName)}>`,
 		});
 	});
-	it("sends trailing user input as-is and labels earlier transcript messages", () => {
+	it("sends trailing user input as-is and labels earlier transcript messages without XML tool_call tags", () => {
 		const { blocks } = replayPrompt(
 			[user("read a.txt"), assistant("reading", ["call-1"]), toolResult("call-1", "FILE-BODY-42"), user("what did it say?")],
 			10_000,
@@ -243,7 +243,13 @@ describe("replayPrompt", () => {
 		const text = blocks.flatMap(block => (block.type === "text" ? [block.text] : [])).join("\n");
 		expect(text).toContain("FILE-BODY-42");
 		expect(text).toContain("read a.txt");
-		expect(text).toContain('id="call-1"');
+		expect(text).toContain("call-1");
+		expect(text).toContain('{"path":"a.txt"}');
+		// Replaying `<tool_call ...>` XML tags in a long transcript poisons Gemini into
+		// emitting literal `<tool_call id="default_api:...">` text instead of native tool calls.
+		expect(text).not.toContain("<tool_call");
+		expect(text).not.toContain("<tool_result");
+		expect(text).toMatch(/native/i);
 		expect(blocks.at(-1)).toEqual({ type: "text", text: "what did it say?" });
 	});
 
@@ -262,7 +268,7 @@ describe("replayPrompt", () => {
 		expect(omittedHistory).toBe(true);
 		expect(Buffer.byteLength(text)).toBeLessThanOrEqual(800);
 		expect(text).not.toContain("EARLIEST-RESULT");
-		expect(text).toContain('id="call-1"');
-		expect(text).toContain("LATEST-RESULT\n</tool_result>\n</conversation-checkpoint>\ncheck that result");
+		expect(text).toContain("(call call-1)");
+		expect(text).toContain("LATEST-RESULT\n[End tool output]\n</conversation-checkpoint>\ncheck that result");
 	});
 });

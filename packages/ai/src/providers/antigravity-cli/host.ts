@@ -148,6 +148,8 @@ interface Conversation {
 	agyModel?: string;
 	/** `model` values agy advertises; undefined when it reported none. */
 	agyModels?: string[];
+	/** `thought_level` values agy advertises for the active model; undefined when omitted. */
+	thoughtLevels?: string[];
 	effort?: string;
 	defaultEffort?: string;
 	requestedEffort?: string;
@@ -322,6 +324,7 @@ export class AgyHost implements ProviderSessionState {
 					systemKey,
 					loaded: true,
 					agyModels: modelValues(created.configOptions),
+					thoughtLevels: thoughtLevels(created.configOptions),
 					defaultEffort: thoughtLevel(created.configOptions),
 				};
 				this.#contextTokens = 0;
@@ -565,6 +568,7 @@ export class AgyHost implements ProviderSessionState {
 				systemKey,
 				loaded: true,
 				agyModels: modelValues(loaded.configOptions),
+				thoughtLevels: thoughtLevels(loaded.configOptions),
 				defaultEffort: thoughtLevel(loaded.configOptions),
 			};
 			this.#contextTokens = 0;
@@ -585,13 +589,25 @@ export class AgyHost implements ProviderSessionState {
 				value: agyModel,
 			});
 			conversation.agyModel = agyModel;
-			conversation.agyModels = modelValues(response.configOptions) ?? conversation.agyModels;
-			conversation.defaultEffort = thoughtLevel(response.configOptions) ?? conversation.defaultEffort;
-			conversation.effort = thoughtLevel(response.configOptions);
+			if (response.configOptions != null) {
+				conversation.agyModels = modelValues(response.configOptions) ?? conversation.agyModels;
+				conversation.thoughtLevels = thoughtLevels(response.configOptions);
+				conversation.defaultEffort = thoughtLevel(response.configOptions);
+				conversation.effort = thoughtLevel(response.configOptions);
+			}
 		}
 		conversation.model = model.id;
-		// An effort-suffixed model value already pins the thought level.
-		const desired = agyModel === model.id ? (effort ?? conversation.defaultEffort) : undefined;
+		// An effort-suffixed model value already pins the thought level, and models
+		// whose configOptions omit `thought_level` (e.g. fixed-effort SKUs) reject it.
+		const offered = conversation.thoughtLevels;
+		let desired: string | undefined;
+		if (agyModel === model.id && offered && offered.length > 0) {
+			if (effort && offered.includes(effort)) {
+				desired = effort;
+			} else if (conversation.defaultEffort && offered.includes(conversation.defaultEffort)) {
+				desired = conversation.defaultEffort;
+			}
+		}
 		if (desired && conversation.effort !== desired) {
 			await connection.setSessionConfigOption({
 				sessionId: conversation.id,
@@ -973,6 +989,20 @@ function systemMeta(system: string): Record<string, unknown> {
 function thoughtLevel(options: SessionConfigOption[] | null | undefined): string | undefined {
 	const option = options?.find(candidate => candidate.id === "thought_level");
 	return option?.type === "select" ? option.currentValue : undefined;
+}
+
+function thoughtLevels(options: SessionConfigOption[] | null | undefined): string[] | undefined {
+	const option = options?.find(candidate => candidate.id === "thought_level");
+	if (option?.type !== "select") return undefined;
+	const values: string[] = [];
+	for (const choice of option.options) {
+		if ("options" in choice && Array.isArray(choice.options)) {
+			for (const sub of choice.options) values.push(sub.value);
+		} else if ("value" in choice) {
+			values.push(choice.value);
+		}
+	}
+	return values;
 }
 
 function modelValues(options: SessionConfigOption[] | null | undefined): string[] | undefined {
