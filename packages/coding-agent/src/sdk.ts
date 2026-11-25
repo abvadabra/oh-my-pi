@@ -210,6 +210,7 @@ import {
 	type PlanYolo,
 	type Prewalk,
 } from "./session/agent-session";
+import { PROVIDER_NOTICE_SOURCE } from "./session/agent-session-events";
 import type { AgentSessionDisposeOptions } from "./session/agent-session-types";
 import { isLegacyImageDescription } from "./session/queued-messages";
 import type { AdvisorToolFactory } from "./session/session-advisors";
@@ -5055,6 +5056,9 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			),
 			() => blobBroker.current,
 		);
+		const onProviderNotice: NonNullable<SimpleStreamOptions["onProviderNotice"]> = message => {
+			session?.emitNotice("warning", message, PROVIDER_NOTICE_SOURCE);
+		};
 		// Outbound credential-pattern redaction follows THIS session's `secrets.enabled` per
 		// request, not the process-wide switch (the newest effect holder's): concurrent ACP/SDK
 		// sessions in one process each keep their own policy.
@@ -5066,6 +5070,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				settingsBoundStreamFn(streamModel, context, {
 					...streamOptions,
 					thinkingCapabilityDbPath: modelRegistry.modelsDbPath,
+					onProviderNotice: streamOptions?.onProviderNotice ?? onProviderNotice,
 				}),
 			);
 		};
